@@ -5,12 +5,14 @@ import { Icons } from './constants.tsx';
 import RecordingView from './components/Recorder/RecordingView.tsx';
 import StudyCalendar from './components/Calendar/StudyCalendar.tsx';
 import SettingsView from './components/Settings/SettingsView.tsx';
+import PrivacyView from './components/Privacy/PrivacyView.tsx';
 import { storageService } from './services/storage.ts';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.RECORDER);
   const [isRecording, setIsRecording] = useState(false);
   const [sessions, setSessions] = useState<StudySession[]>([]);
+  const [isAdsTxt, setIsAdsTxt] = useState(false);
   
   const [settings, setSettings] = useState<StudioSettings>({
     filter: FilterType.NONE,
@@ -22,6 +24,13 @@ const App: React.FC = () => {
     sessionLabel: 'Deep Work Session'
   });
 
+  // Simple ads.txt routing detection
+  useEffect(() => {
+    if (window.location.pathname === '/ads.txt') {
+      setIsAdsTxt(true);
+    }
+  }, []);
+
   useEffect(() => {
     setSessions(storageService.getSessions());
   }, []);
@@ -31,6 +40,15 @@ const App: React.FC = () => {
     setSessions(updated);
     storageService.saveSession(newSession);
   };
+
+  // If ads.txt is requested, render raw text immediately
+  if (isAdsTxt) {
+    return (
+      <pre style={{ padding: '20px', background: '#fff', color: '#000', height: '100vh', margin: 0 }}>
+        google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
+      </pre>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
@@ -98,6 +116,9 @@ const App: React.FC = () => {
             <StudyCalendar sessions={sessions} />
           </div>
         )}
+        {activeTab === AppTab.PRIVACY && (
+          <PrivacyView />
+        )}
       </main>
 
       {/* Footer / Status Bar - Hidden during recording */}
@@ -108,6 +129,12 @@ const App: React.FC = () => {
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
               System Live
             </span>
+            <button 
+              onClick={() => setActiveTab(AppTab.PRIVACY)}
+              className={`hover:text-white transition-colors underline underline-offset-4 ${activeTab === AppTab.PRIVACY ? 'text-white' : ''}`}
+            >
+              Privacy Policy (개인정보처리방침)
+            </button>
           </div>
           <div className="flex items-center gap-4">
             <span>{sessions.length} Recorded Sessions</span>

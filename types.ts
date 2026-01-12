@@ -2,7 +2,8 @@
 export enum AppTab {
   RECORDER = 'recorder',
   CALENDAR = 'calendar',
-  SETTINGS = 'settings'
+  SETTINGS = 'settings',
+  PRIVACY = 'privacy'
 }
 
 export enum FilterType {
