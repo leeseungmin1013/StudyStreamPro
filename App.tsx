@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { AppTab, StudySession, StudioSettings, FilterType, FontType } from './types';
-import { Icons } from './constants';
-import RecordingView from './components/Recorder/RecordingView';
-import StudyCalendar from './components/Calendar/StudyCalendar';
-import SettingsView from './components/Settings/SettingsView';
-import { storageService } from './services/storage';
+import { AppTab, StudySession, StudioSettings, FilterType, FontType } from './types.ts';
+import { Icons } from './constants.tsx';
+import RecordingView from './components/Recorder/RecordingView.tsx';
+import StudyCalendar from './components/Calendar/StudyCalendar.tsx';
+import SettingsView from './components/Settings/SettingsView.tsx';
+import { storageService } from './services/storage.ts';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.RECORDER);

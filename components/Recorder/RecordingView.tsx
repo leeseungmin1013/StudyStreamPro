@@ -1,8 +1,8 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Icons, POMODORO_WORK } from '../../constants';
-import { StudioSettings, StudySession } from '../../types';
-import { storageService } from '../../services/storage';
+import { Icons, POMODORO_WORK } from '../../constants.tsx';
+import { StudioSettings, StudySession } from '../../types.ts';
+import { storageService } from '../../services/storage.ts';
 
 interface RecordingViewProps {
   settings: StudioSettings;
@@ -113,7 +113,13 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
 
     ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
     ctx.beginPath();
-    ctx.roundRect(px, py, w, h, [16 * settings.overlayScale]);
+    const radius = 16 * settings.overlayScale;
+    if (ctx.roundRect) {
+      ctx.roundRect(px, py, w, h, [radius]);
+    } else {
+      // Fallback for browsers without roundRect
+      ctx.rect(px, py, w, h);
+    }
     ctx.fill();
     ctx.fillStyle = '#10b981';
     ctx.textBaseline = 'middle';

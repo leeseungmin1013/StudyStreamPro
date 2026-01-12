@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, useCallback } from 'react';
-import { FilterType, FontType, StudioSettings } from '../../types';
-import { Icons, POMODORO_WORK } from '../../constants';
+import { FilterType, FontType, StudioSettings } from '../../types.ts';
+import { Icons, POMODORO_WORK } from '../../constants.tsx';
 
 interface SettingsViewProps {
   settings: StudioSettings;
@@ -70,7 +70,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSettings }) =>
 
     ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
     ctx.beginPath();
-    ctx.roundRect(px, py, w, h, [12 * settings.overlayScale]);
+    const radius = 12 * settings.overlayScale;
+    if (ctx.roundRect) {
+      ctx.roundRect(px, py, w, h, [radius]);
+    } else {
+      ctx.rect(px, py, w, h);
+    }
     ctx.fill();
     ctx.fillStyle = '#10b981';
     ctx.textBaseline = 'middle';
