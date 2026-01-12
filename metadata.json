@@ -1,0 +1,8 @@
+{
+  "name": "StudyStream Pro",
+  "description": "A high-end 'Study With Me' recording suite with real-time Pomodoro overlays, filters, and study tracking calendar.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
