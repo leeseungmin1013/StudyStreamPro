@@ -24,16 +24,24 @@ const App: React.FC = () => {
     sessionLabel: 'Deep Work Session'
   });
 
-  // Simple ads.txt routing detection
   useEffect(() => {
     if (window.location.pathname === '/ads.txt') {
       setIsAdsTxt(true);
     }
-  }, []);
-
-  useEffect(() => {
     setSessions(storageService.getSessions());
   }, []);
+
+  // Trigger AdSense refresh on tab changes (for Manual Ads)
+  useEffect(() => {
+    if (!isRecording) {
+      try {
+        // @ts-ignore
+        (window.adsbygoogle = window.adsbygoogle || []).push({});
+      } catch (e) {
+        // AdSense might not be loaded yet or already initialized
+      }
+    }
+  }, [activeTab, isRecording]);
 
   const handleSessionComplete = (newSession: StudySession) => {
     const updated = [...sessions, newSession];
@@ -41,11 +49,11 @@ const App: React.FC = () => {
     storageService.saveSession(newSession);
   };
 
-  // If ads.txt is requested, render raw text immediately
   if (isAdsTxt) {
     return (
       <pre style={{ padding: '20px', background: '#fff', color: '#000', height: '100vh', margin: 0 }}>
-        google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
+        # REPLACE pub-8461022130456850 with your actual AdSense Publisher ID
+        google.com, pub-8461022130456850, DIRECT, f08c47fec0942fa0
       </pre>
     );
   }
@@ -99,6 +107,18 @@ const App: React.FC = () => {
         </header>
       )}
 
+      {/* Manual Ad Slot - Top Banner (Hidden during recording) */}
+      {!isRecording && activeTab !== AppTab.PRIVACY && (
+        <div className="w-full bg-slate-900/20 border-b border-slate-800 flex justify-center py-2 min-h-[60px]">
+          <ins className="adsbygoogle"
+               style={{ display: 'block', width: '100%', height: '60px' }}
+               data-ad-client="ca-pub-0000000000000000"
+               data-ad-slot="0000000000"
+               data-ad-format="horizontal"
+               data-full-width-responsive="true"></ins>
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="flex-1 relative overflow-hidden">
         {activeTab === AppTab.RECORDER && (
@@ -112,7 +132,7 @@ const App: React.FC = () => {
           <SettingsView settings={settings} setSettings={setSettings} />
         )}
         {activeTab === AppTab.CALENDAR && (
-          <div className="h-full overflow-y-auto">
+          <div className="h-full overflow-y-auto custom-scrollbar">
             <StudyCalendar sessions={sessions} />
           </div>
         )}
