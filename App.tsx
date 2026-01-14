@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { AppTab, StudySession, StudioSettings, FilterType, FontType } from './types.ts';
+import { AppTab, StudySession, StudioSettings, FilterType, FontType, FaceStickerType } from './types.ts';
 import { Icons } from './constants.tsx';
 import RecordingView from './components/Recorder/RecordingView.tsx';
 import StudyCalendar from './components/Calendar/StudyCalendar.tsx';
@@ -23,6 +23,8 @@ const App: React.FC = () => {
     overlayY: 85,
     overlayScale: 1.0,
     sessionLabel: 'Deep Work Session',
+    faceProtection: false,
+    faceSticker: FaceStickerType.AVATAR,
     timerBgColor: '#0f172a',
     timerTextColor: '#10b981',
     timerOpacity: 0.75,
@@ -67,7 +69,6 @@ const App: React.FC = () => {
 
   return (
     <div className={`h-screen flex flex-col transition-colors duration-300 ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} overflow-hidden`}>
-      {/* Header */}
       {!isRecording && (
         <header className={`px-6 py-4 flex items-center justify-between border-b backdrop-blur-xl z-50 transition-colors ${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-slate-200 bg-white/80'}`}>
           <div className="flex items-center gap-3">
@@ -116,7 +117,6 @@ const App: React.FC = () => {
         </header>
       )}
 
-      {/* Manual Ad Slot */}
       {!isRecording && activeTab !== AppTab.PRIVACY && (
         <div className={`w-full border-b flex justify-center py-2 min-h-[60px] ${isDark ? 'bg-slate-900/20 border-slate-800' : 'bg-slate-100/50 border-slate-200'}`}>
           <ins className="adsbygoogle"

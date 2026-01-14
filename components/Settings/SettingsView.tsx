@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useCallback } from 'react';
-import { FilterType, FontType, StudioSettings } from '../../types.ts';
+import { FilterType, FontType, StudioSettings, FaceStickerType } from '../../types.ts';
 import { Icons } from '../../constants.tsx';
 
 interface SettingsViewProps {
@@ -61,6 +61,37 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSettings }) =>
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
+    // Mock Face Mask for Preview
+    if (settings.faceProtection) {
+      ctx.save();
+      ctx.fillStyle = '#00000080';
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const rw = 200;
+      const rh = 250;
+      
+      if (settings.faceSticker === FaceStickerType.BLUR) {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rw/2, rh/2, 0, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.filter = 'blur(20px)';
+        ctx.drawImage(canvas, 0, 0);
+      } else {
+        ctx.fillStyle = '#3b82f640';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rw/2, rh/2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('FACE COVERED', cx, cy);
+      }
+      ctx.restore();
+    }
+
     const fs = 40 * settings.overlayScale;
     const weight = settings.timerFontWeight === '700' ? 'bold' : 'normal';
     ctx.font = `${weight} ${fs}px ${settings.font}`;
@@ -101,9 +132,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSettings }) =>
 
   return (
     <div className="flex flex-col lg:flex-row h-full gap-6 p-6 max-w-7xl mx-auto overflow-y-auto custom-scrollbar pb-24">
-      {/* Left Column: Studio Controls (Optimized Grid) */}
+      {/* Left Column */}
       <div className="w-full lg:w-1/2 space-y-4">
-        {/* Core Config Card */}
+        {/* Core Engine Card */}
         <section className={`${isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'} p-4 rounded-2xl border space-y-4 shadow-sm`}>
           <div className="flex items-center justify-between border-b pb-2 mb-2 transition-colors border-slate-200 dark:border-slate-800">
             <h2 className="text-sm font-bold flex items-center gap-2">
@@ -143,6 +174,41 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, setSettings }) =>
                 {Object.entries(FilterType).map(([k, v]) => <option key={k} value={v}>{k}</option>)}
               </select>
             </div>
+          </div>
+        </section>
+
+        {/* Face Privacy Card */}
+        <section className={`${isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'} p-4 rounded-2xl border space-y-4 shadow-sm`}>
+          <div className="flex items-center justify-between border-b pb-2 mb-2 transition-colors border-slate-200 dark:border-slate-800">
+            <h2 className="text-sm font-bold flex items-center gap-2">
+              <span className="w-2 h-2 bg-purple-500 rounded-full"></span> Face Shield
+            </h2>
+            <div 
+              onClick={() => setSettings({...settings, faceProtection: !settings.faceProtection})}
+              className={`w-10 h-5 rounded-full transition-colors cursor-pointer relative ${settings.faceProtection ? 'bg-purple-600' : 'bg-slate-700'}`}
+            >
+              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${settings.faceProtection ? 'left-5.5' : 'left-0.5'}`} />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+             <div>
+                <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 block">Masking Style</label>
+                <div className={`flex p-1 rounded-xl border transition-colors ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                  {Object.values(FaceStickerType).map((type) => (
+                    <button 
+                      key={type}
+                      onClick={() => setSettings({...settings, faceSticker: type})}
+                      className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all uppercase tracking-widest ${settings.faceSticker === type ? (isDark ? 'bg-slate-800 text-white' : 'bg-white text-purple-600 shadow-sm') : 'text-slate-500'}`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+             </div>
+             <p className="text-[10px] text-slate-400 italic">
+               Face detection is processed <b>locally</b> on your device and is never sent to a server.
+             </p>
           </div>
         </section>
 

@@ -1,8 +1,11 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Icons, POMODORO_WORK } from '../../constants.tsx';
-import { StudioSettings, StudySession } from '../../types.ts';
+import { StudioSettings, StudySession, FaceStickerType } from '../../types.ts';
 import { storageService } from '../../services/storage.ts';
+
+// @ts-ignore - MediaPipe imported via importMap
+import * as faceDetectionModule from '@mediapipe/face_detection';
 
 interface RecordingViewProps {
   settings: StudioSettings;
@@ -17,7 +20,12 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
   const chunksRef = useRef<Blob[]>([]);
   const requestRef = useRef<number>(0);
   
-  // Refs to track values for the asynchronous MediaRecorder callbacks to prevent stale closures
+  // Local Inference Refs
+  const faceDetectorRef = useRef<any>(null);
+  const lastFaceBoxRef = useRef<any>(null);
+  const lastDetectionTimeRef = useRef<number>(0);
+  const avatarImgRef = useRef<HTMLImageElement | null>(null);
+
   const startTimeRef = useRef<number>(0);
   const settingsRef = useRef(settings);
 
@@ -26,10 +34,53 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
   const [isTimerActive, setIsTimerActive] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
 
-  // Sync settings to a ref so rec.onstop always sees the latest labels/modes
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  // Load Avatar Image once
+  useEffect(() => {
+    const img = new Image();
+    img.src = 'https://api.iconify.design/noto:smiling-face-with-sunglasses.svg';
+    img.onload = () => { avatarImgRef.current = img; };
+  }, []);
+
+  // Initialize MediaPipe Face Detection Locally
+  useEffect(() => {
+    const setupFaceDetection = async () => {
+      try {
+        // Handle different export patterns from esm.sh
+        const FaceDetectionClass = faceDetectionModule.FaceDetection || (faceDetectionModule.default ? (faceDetectionModule.default as any).FaceDetection : null);
+        
+        if (!FaceDetectionClass) {
+          console.error("FaceDetection class not found in module", faceDetectionModule);
+          return;
+        }
+
+        const faceDetection = new FaceDetectionClass({
+          locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4/${file}`
+        });
+
+        faceDetection.setOptions({
+          model: 'short',
+          minDetectionConfidence: 0.5
+        });
+
+        faceDetection.onResults((results: any) => {
+          if (results.detections && results.detections.length > 0) {
+            lastFaceBoxRef.current = results.detections[0].boundingBox;
+            lastDetectionTimeRef.current = Date.now();
+          }
+        });
+
+        faceDetectorRef.current = faceDetection;
+      } catch (err) {
+        console.error("Failed to setup face detection", err);
+      }
+    };
+    
+    setupFaceDetection();
+  }, []);
 
   useEffect(() => {
     const initCamera = async () => {
@@ -92,7 +143,54 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
   };
 
-  const draw = useCallback(() => {
+  const drawFaceMask = (ctx: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number) => {
+    const now = Date.now();
+    const box = lastFaceBoxRef.current;
+    
+    // Fail-safe: Use last known position for 500ms if detection is lost
+    if (!box || (now - lastDetectionTimeRef.current > 500)) return;
+
+    // Expanded Mask Strategy (1.4x scaling for privacy buffer)
+    const scaleFactor = 1.4;
+    const w = box.width * canvasWidth * scaleFactor;
+    const h = box.height * canvasHeight * scaleFactor;
+    const x = (box.xCenter * canvasWidth) - (w / 2);
+    const y = (box.yCenter * canvasHeight) - (h / 2);
+
+    ctx.save();
+    
+    if (settings.faceSticker === FaceStickerType.BLUR) {
+      ctx.beginPath();
+      ctx.ellipse(x + w/2, y + h/2, w/2, h/2, 0, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.filter = 'blur(40px)';
+      ctx.drawImage(canvasRef.current!, 0, 0);
+    } else if (settings.faceSticker === FaceStickerType.PIXELATE) {
+      const pixelSize = 15;
+      const smallCanvas = document.createElement('canvas');
+      smallCanvas.width = w / pixelSize;
+      smallCanvas.height = h / pixelSize;
+      const smallCtx = smallCanvas.getContext('2d')!;
+      smallCtx.imageSmoothingEnabled = false;
+      smallCtx.drawImage(canvasRef.current!, x, y, w, h, 0, 0, smallCanvas.width, smallCanvas.height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(smallCanvas, 0, 0, smallCanvas.width, smallCanvas.height, x, y, w, h);
+    } else {
+      // Default: Avatar
+      if (avatarImgRef.current) {
+        ctx.drawImage(avatarImgRef.current, x, y, w, h);
+      } else {
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.ellipse(x + w/2, y + h/2, w/2, h/2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    ctx.restore();
+  };
+
+  const draw = useCallback(async () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
     if (!canvas || !video || video.readyState < 2) {
@@ -108,12 +206,27 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
       canvas.height = video.videoHeight;
     }
 
+    // Step 1: Inference (Local, Private)
+    if (settings.faceProtection && faceDetectorRef.current) {
+      try {
+        await faceDetectorRef.current.send({ image: video });
+      } catch (err) {
+        console.error("Face detection inference error", err);
+      }
+    }
+
+    // Step 2: Render base frame
     ctx.save();
     ctx.filter = settings.filter;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
-    // Timer Overlay Styling
+    // Step 3: Overlay Privacy Mask (if enabled)
+    if (settings.faceProtection) {
+      drawFaceMask(ctx, canvas.width, canvas.height);
+    }
+
+    // Timer Overlay
     const fs = 40 * settings.overlayScale;
     const weight = settings.timerFontWeight === '700' ? 'bold' : 'normal';
     ctx.font = `${weight} ${fs}px ${settings.font}`;
@@ -179,7 +292,6 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
       
       rec.ondataavailable = e => chunksRef.current.push(e.data);
       rec.onstop = () => {
-        // Calculate precise final duration from the start timestamp
         const finalDuration = Math.round((Date.now() - startTimeRef.current) / 1000);
         const blob = new Blob(chunksRef.current, { type: 'video/webm' });
         const a = document.createElement('a');
@@ -187,7 +299,6 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
         a.download = `StudyStream_${Date.now()}.webm`;
         a.click();
         
-        // Finalize the session data
         onSessionComplete({
           id: crypto.randomUUID(),
           timestamp: startTimeRef.current,
@@ -211,11 +322,13 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
         <video ref={videoRef} className="hidden" muted playsInline />
         <canvas ref={canvasRef} className="w-full h-full object-contain" />
         
-        {/* Immersive HUD Overlay */}
         <div className="absolute inset-0 p-8 flex flex-col justify-between pointer-events-none">
           <div className="flex justify-between items-start opacity-0 hover:opacity-100 transition-opacity">
-            <div className="bg-black/60 backdrop-blur-md px-6 py-2 rounded-2xl border border-white/10">
-              <span className="text-white text-sm font-bold tracking-tight">{settings.sessionLabel}</span>
+            <div className="bg-black/60 backdrop-blur-md px-6 py-2 rounded-2xl border border-white/10 flex items-center gap-2">
+              {settings.faceProtection && <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>}
+              <span className="text-white text-sm font-bold tracking-tight">
+                {settings.sessionLabel} {settings.faceProtection ? '(Face Shield Active)' : ''}
+              </span>
             </div>
           </div>
 
@@ -236,13 +349,19 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
       </div>
       
       {!isRecording && (
-        <div className="mt-4 flex gap-8 items-center text-slate-500 text-xs font-bold uppercase tracking-widest">
+        <div className="mt-4 flex gap-8 items-center text-slate-500 text-[10px] font-bold uppercase tracking-widest">
            <button onClick={() => setIsTimerActive(!isTimerActive)} className="hover:text-emerald-400 transition-colors">
             {isTimerActive ? 'PAUSE TIMER' : 'RESUME TIMER'}
            </button>
            <button onClick={() => setTimeLeft(settings.timerMode === 'pomodoro' ? POMODORO_WORK : 0)} className="hover:text-blue-400 transition-colors">
             RESET TIMER
            </button>
+           {settings.faceProtection && (
+             <span className="text-emerald-500/50 flex items-center gap-1 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+               <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>
+               Local Face Detection Active
+             </span>
+           )}
         </div>
       )}
     </div>

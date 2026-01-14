@@ -14,6 +14,12 @@ export enum FilterType {
   COOL = 'brightness(0.9) hue-rotate(30deg)'
 }
 
+export enum FaceStickerType {
+  AVATAR = 'avatar',
+  BLUR = 'blur',
+  PIXELATE = 'pixelate'
+}
+
 export enum FontType {
   INTER = "'Inter', sans-serif",
   MONO = "'JetBrains Mono', monospace",
@@ -34,6 +40,9 @@ export interface StudioSettings {
   overlayY: number;
   overlayScale: number;
   sessionLabel: string;
+  // Face Privacy
+  faceProtection: boolean;
+  faceSticker: FaceStickerType;
   // Aesthetic customization
   timerBgColor: string;
   timerTextColor: string;
