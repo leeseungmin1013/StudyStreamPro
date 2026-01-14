@@ -16,11 +16,20 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const requestRef = useRef<number>(0);
+  
+  // Refs to track values for the asynchronous MediaRecorder callbacks to prevent stale closures
+  const startTimeRef = useRef<number>(0);
+  const settingsRef = useRef(settings);
 
   const [isRecording, setIsRecording] = useState(false);
   const [timeLeft, setTimeLeft] = useState(settings.timerMode === 'pomodoro' ? POMODORO_WORK : 0);
   const [isTimerActive, setIsTimerActive] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+
+  // Sync settings to a ref so rec.onstop always sees the latest labels/modes
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   useEffect(() => {
     const initCamera = async () => {
@@ -76,6 +85,13 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
     return [h, m, s].map(v => v < 10 ? '0' + v : v).filter((v, i) => v !== '00' || i > 0).join(':');
   };
 
+  const hexToRgba = (hex: string, opacity: number) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  };
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -97,31 +113,32 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
-    // Timer Overlay
+    // Timer Overlay Styling
     const fs = 40 * settings.overlayScale;
-    ctx.font = `bold ${fs}px "${settings.font}"`;
+    const weight = settings.timerFontWeight === '700' ? 'bold' : 'normal';
+    ctx.font = `${weight} ${fs}px ${settings.font}`;
     const t = formatTime(timeLeft);
     const m = ctx.measureText(t);
-    const p = 24 * settings.overlayScale;
+    const p = settings.timerPadding * settings.overlayScale;
     const w = m.width + p * 2;
-    const h = 70 * settings.overlayScale;
+    const h = (fs + p * 1.5);
     
     let px = (settings.overlayX / 100) * canvas.width - (w / 2);
     let py = (settings.overlayY / 100) * canvas.height - (h / 2);
     px = Math.max(20, Math.min(canvas.width - w - 20, px));
     py = Math.max(20, Math.min(canvas.height - h - 20, py));
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+    ctx.fillStyle = hexToRgba(settings.timerBgColor, settings.timerOpacity);
     ctx.beginPath();
-    const radius = 16 * settings.overlayScale;
+    const radius = settings.timerBorderRadius * settings.overlayScale;
     if (ctx.roundRect) {
       ctx.roundRect(px, py, w, h, [radius]);
     } else {
-      // Fallback for browsers without roundRect
       ctx.rect(px, py, w, h);
     }
     ctx.fill();
-    ctx.fillStyle = '#10b981';
+
+    ctx.fillStyle = settings.timerTextColor;
     ctx.textBaseline = 'middle';
     ctx.fillText(t, px + p, py + (h / 2));
 
@@ -156,22 +173,30 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
       if (videoRef.current?.srcObject) {
         (videoRef.current.srcObject as MediaStream).getAudioTracks().forEach(t => stream.addTrack(t));
       }
+      
       const rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
+      startTimeRef.current = Date.now();
+      
       rec.ondataavailable = e => chunksRef.current.push(e.data);
       rec.onstop = () => {
+        // Calculate precise final duration from the start timestamp
+        const finalDuration = Math.round((Date.now() - startTimeRef.current) / 1000);
         const blob = new Blob(chunksRef.current, { type: 'video/webm' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = `StudyStream_${Date.now()}.webm`;
         a.click();
+        
+        // Finalize the session data
         onSessionComplete({
           id: crypto.randomUUID(),
-          timestamp: Date.now(),
-          durationSeconds: recordingTime,
-          label: settings.sessionLabel,
-          type: settings.timerMode
+          timestamp: startTimeRef.current,
+          durationSeconds: finalDuration,
+          label: settingsRef.current.sessionLabel,
+          type: settingsRef.current.timerMode
         });
       };
+      
       rec.start();
       mediaRecorderRef.current = rec;
       setIsRecording(true);

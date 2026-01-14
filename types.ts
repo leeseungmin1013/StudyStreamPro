@@ -15,19 +15,32 @@ export enum FilterType {
 }
 
 export enum FontType {
-  INTER = 'Inter, sans-serif',
-  MONO = 'JetBrains Mono, monospace',
-  SERIF = 'serif'
+  INTER = "'Inter', sans-serif",
+  MONO = "'JetBrains Mono', monospace",
+  SERIF = "'Playfair Display', serif",
+  MONTSERRAT = "'Montserrat', sans-serif",
+  OSWALD = "'Oswald', sans-serif",
+  ROBOTO_MONO = "'Roboto Mono', monospace",
+  POPPINS = "'Poppins', sans-serif",
+  BEBAS = "'Bebas Neue', cursive"
 }
 
 export interface StudioSettings {
   filter: FilterType;
   font: FontType;
+  theme: 'dark' | 'light';
   timerMode: 'stopwatch' | 'pomodoro';
   overlayX: number;
   overlayY: number;
   overlayScale: number;
   sessionLabel: string;
+  // Aesthetic customization
+  timerBgColor: string;
+  timerTextColor: string;
+  timerOpacity: number;
+  timerBorderRadius: number;
+  timerPadding: number;
+  timerFontWeight: '400' | '700';
 }
 
 export interface StudySession {
