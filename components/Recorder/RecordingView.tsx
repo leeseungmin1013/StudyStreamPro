@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Icons, POMODORO_WORK } from '../../constants.tsx';
 import { StudioSettings, StudySession, FaceStickerType } from '../../types.ts';
@@ -49,13 +48,11 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
   useEffect(() => {
     const setupFaceDetection = async () => {
       try {
-        // Handle different export patterns from esm.sh
-        const FaceDetectionClass = faceDetectionModule.FaceDetection || (faceDetectionModule.default ? (faceDetectionModule.default as any).FaceDetection : null);
+        // Fix: Use type casting to bypass TS error on 'default' property which may not be in the module's type definition
+        const mod = faceDetectionModule as any;
+        const FaceDetectionClass = mod.FaceDetection || (mod.default ? mod.default.FaceDetection : null);
         
-        if (!FaceDetectionClass) {
-          console.error("FaceDetection class not found in module", faceDetectionModule);
-          return;
-        }
+        if (!FaceDetectionClass) return;
 
         const faceDetection = new FaceDetectionClass({
           locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4/${file}`
@@ -146,11 +143,8 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
   const drawFaceMask = (ctx: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number) => {
     const now = Date.now();
     const box = lastFaceBoxRef.current;
-    
-    // Fail-safe: Use last known position for 500ms if detection is lost
     if (!box || (now - lastDetectionTimeRef.current > 500)) return;
 
-    // Expanded Mask Strategy (1.4x scaling for privacy buffer)
     const scaleFactor = 1.4;
     const w = box.width * canvasWidth * scaleFactor;
     const h = box.height * canvasHeight * scaleFactor;
@@ -158,7 +152,6 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
     const y = (box.yCenter * canvasHeight) - (h / 2);
 
     ctx.save();
-    
     if (settings.faceSticker === FaceStickerType.BLUR) {
       ctx.beginPath();
       ctx.ellipse(x + w/2, y + h/2, w/2, h/2, 0, 0, Math.PI * 2);
@@ -176,17 +169,8 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(smallCanvas, 0, 0, smallCanvas.width, smallCanvas.height, x, y, w, h);
     } else {
-      // Default: Avatar
-      if (avatarImgRef.current) {
-        ctx.drawImage(avatarImgRef.current, x, y, w, h);
-      } else {
-        ctx.fillStyle = '#000';
-        ctx.beginPath();
-        ctx.ellipse(x + w/2, y + h/2, w/2, h/2, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      if (avatarImgRef.current) ctx.drawImage(avatarImgRef.current, x, y, w, h);
     }
-    
     ctx.restore();
   };
 
@@ -206,27 +190,17 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
       canvas.height = video.videoHeight;
     }
 
-    // Step 1: Inference (Local, Private)
     if (settings.faceProtection && faceDetectorRef.current) {
-      try {
-        await faceDetectorRef.current.send({ image: video });
-      } catch (err) {
-        console.error("Face detection inference error", err);
-      }
+      try { await faceDetectorRef.current.send({ image: video }); } catch (err) {}
     }
 
-    // Step 2: Render base frame
     ctx.save();
     ctx.filter = settings.filter;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
-    // Step 3: Overlay Privacy Mask (if enabled)
-    if (settings.faceProtection) {
-      drawFaceMask(ctx, canvas.width, canvas.height);
-    }
+    if (settings.faceProtection) drawFaceMask(ctx, canvas.width, canvas.height);
 
-    // Timer Overlay
     const fs = 40 * settings.overlayScale;
     const weight = settings.timerFontWeight === '700' ? 'bold' : 'normal';
     ctx.font = `${weight} ${fs}px ${settings.font}`;
@@ -244,18 +218,13 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
     ctx.fillStyle = hexToRgba(settings.timerBgColor, settings.timerOpacity);
     ctx.beginPath();
     const radius = settings.timerBorderRadius * settings.overlayScale;
-    if (ctx.roundRect) {
-      ctx.roundRect(px, py, w, h, [radius]);
-    } else {
-      ctx.rect(px, py, w, h);
-    }
+    if (ctx.roundRect) ctx.roundRect(px, py, w, h, [radius]); else ctx.rect(px, py, w, h);
     ctx.fill();
 
     ctx.fillStyle = settings.timerTextColor;
     ctx.textBaseline = 'middle';
     ctx.fillText(t, px + p, py + (h / 2));
 
-    // Recording HUD
     if (isRecording) {
       ctx.fillStyle = '#ef4444';
       ctx.beginPath();
@@ -286,10 +255,8 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
       if (videoRef.current?.srcObject) {
         (videoRef.current.srcObject as MediaStream).getAudioTracks().forEach(t => stream.addTrack(t));
       }
-      
       const rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
       startTimeRef.current = Date.now();
-      
       rec.ondataavailable = e => chunksRef.current.push(e.data);
       rec.onstop = () => {
         const finalDuration = Math.round((Date.now() - startTimeRef.current) / 1000);
@@ -298,7 +265,6 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
         a.href = URL.createObjectURL(blob);
         a.download = `StudyStream_${Date.now()}.webm`;
         a.click();
-        
         onSessionComplete({
           id: crypto.randomUUID(),
           timestamp: startTimeRef.current,
@@ -307,7 +273,6 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
           type: settingsRef.current.timerMode
         });
       };
-      
       rec.start();
       mediaRecorderRef.current = rec;
       setIsRecording(true);
@@ -317,49 +282,55 @@ const RecordingView: React.FC<RecordingViewProps> = ({ settings, onSessionComple
   };
 
   return (
-    <div className="relative w-full h-full bg-black flex flex-col items-center justify-center p-4">
-      <div className="relative w-full h-full max-w-[1920px] aspect-video rounded-[2rem] overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
-        <video ref={videoRef} className="hidden" muted playsInline />
-        <canvas ref={canvasRef} className="w-full h-full object-contain" />
-        
-        <div className="absolute inset-0 p-8 flex flex-col justify-between pointer-events-none">
-          <div className="flex justify-between items-start opacity-0 hover:opacity-100 transition-opacity">
-            <div className="bg-black/60 backdrop-blur-md px-6 py-2 rounded-2xl border border-white/10 flex items-center gap-2">
-              {settings.faceProtection && <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>}
-              <span className="text-white text-sm font-bold tracking-tight">
-                {settings.sessionLabel} {settings.faceProtection ? '(Face Shield Active)' : ''}
-              </span>
+    <div className="w-full h-full bg-black flex flex-col p-2 md:p-4 overflow-hidden box-border">
+      {/* Container that strictly fits available space */}
+      <div className="flex-1 min-h-0 relative w-full flex items-center justify-center">
+        <div className="relative w-full h-full max-w-[1920px] rounded-xl md:rounded-[2rem] overflow-hidden border border-slate-800 shadow-2xl bg-slate-950 flex items-center justify-center">
+          <video ref={videoRef} className="hidden" muted playsInline />
+          {/* object-contain ensures the aspect ratio is maintained inside the fixed height container */}
+          <canvas ref={canvasRef} className="max-w-full max-h-full object-contain" />
+          
+          <div className="absolute inset-0 p-4 md:p-8 flex flex-col justify-between pointer-events-none">
+            <div className="flex justify-between items-start opacity-0 hover:opacity-100 transition-opacity">
+              <div className="bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-xl border border-white/10 flex items-center gap-2">
+                {settings.faceProtection && <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>}
+                <span className="text-white text-xs font-bold tracking-tight">
+                  {settings.sessionLabel}
+                </span>
+              </div>
             </div>
-          </div>
 
-          <div className="flex justify-center items-center pointer-events-auto">
-            <button 
-              onClick={toggleRecording}
-              className={`group flex items-center gap-4 px-10 py-5 rounded-full font-black text-xl tracking-tighter transition-all shadow-2xl ${
-                isRecording 
-                ? 'bg-red-500 hover:bg-red-600 scale-105 ring-8 ring-red-500/20' 
-                : 'bg-white text-black hover:bg-slate-100 ring-8 ring-white/10'
-              }`}
-            >
-              {isRecording ? <Icons.Stop /> : <Icons.Video />}
-              {isRecording ? 'FINISH' : 'START SESSION'}
-            </button>
+            <div className="flex justify-center items-center pointer-events-auto">
+              <button 
+                onClick={toggleRecording}
+                className={`group flex items-center gap-3 px-8 py-3 md:py-4 rounded-full font-black text-sm md:text-lg transition-all shadow-2xl ${
+                  isRecording 
+                  ? 'bg-red-500 hover:bg-red-600 scale-105 ring-4 ring-red-500/20' 
+                  : 'bg-white text-black hover:bg-slate-100 ring-4 ring-white/10'
+                }`}
+              >
+                {isRecording ? <Icons.Stop /> : <Icons.Video />}
+                {isRecording ? 'FINISH' : 'START SESSION'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
       
+      {/* Controls Area (Shrink-resistant) */}
       {!isRecording && (
-        <div className="mt-4 flex gap-8 items-center text-slate-500 text-[10px] font-bold uppercase tracking-widest">
-           <button onClick={() => setIsTimerActive(!isTimerActive)} className="hover:text-emerald-400 transition-colors">
+        <div className="mt-2 md:mt-3 flex flex-wrap gap-4 md:gap-6 items-center justify-center text-slate-500 text-[8px] md:text-[10px] font-bold uppercase tracking-widest shrink-0">
+           <button onClick={() => setIsTimerActive(!isTimerActive)} className="hover:text-emerald-400 transition-colors flex items-center gap-1.5 py-1">
+            <div className={`w-1.5 h-1.5 rounded-full ${isTimerActive ? 'bg-emerald-500' : 'bg-slate-700'}`}></div>
             {isTimerActive ? 'PAUSE TIMER' : 'RESUME TIMER'}
            </button>
-           <button onClick={() => setTimeLeft(settings.timerMode === 'pomodoro' ? POMODORO_WORK : 0)} className="hover:text-blue-400 transition-colors">
+           <button onClick={() => setTimeLeft(settings.timerMode === 'pomodoro' ? POMODORO_WORK : 0)} className="hover:text-blue-400 transition-colors py-1">
             RESET TIMER
            </button>
            {settings.faceProtection && (
-             <span className="text-emerald-500/50 flex items-center gap-1 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-               <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>
-               Local Face Detection Active
+             <span className="text-emerald-500/60 hidden sm:flex items-center gap-1.5 border border-emerald-500/20 px-3 py-1 rounded-full bg-emerald-500/5">
+               <Icons.Drive />
+               Local Face Shield
              </span>
            )}
         </div>
