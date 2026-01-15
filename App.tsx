@@ -1,18 +1,22 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppTab, StudySession, StudioSettings, FilterType, FontType, FaceStickerType } from './types.ts';
 import { Icons } from './constants.tsx';
 import RecordingView from './components/Recorder/RecordingView.tsx';
 import StudyCalendar from './components/Calendar/StudyCalendar.tsx';
 import SettingsView from './components/Settings/SettingsView.tsx';
 import PrivacyView from './components/Privacy/PrivacyView.tsx';
+import Login from './components/Auth/Login.tsx';
 import { storageService } from './services/storage.ts';
+import { supabase } from './services/supabase.ts';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.RECORDER);
   const [isRecording, setIsRecording] = useState(false);
   const [sessions, setSessions] = useState<StudySession[]>([]);
+  const [session, setSession] = useState<any>(null);
   const [isAdsTxt, setIsAdsTxt] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   const [settings, setSettings] = useState<StudioSettings>({
     filter: FilterType.NONE,
@@ -33,11 +37,64 @@ const App: React.FC = () => {
     timerFontWeight: '700'
   });
 
+  const settingsDebounceRef = useRef<any>(null);
+
+  // Handle Auth State
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setIsLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Fetch Data on Login
+  useEffect(() => {
+    const fetchData = async () => {
+      if (session?.user) {
+        setIsLoading(true);
+        const [cloudSessions, cloudSettings] = await Promise.all([
+          storageService.getSessionsCloud(session.user.id),
+          storageService.getSettingsCloud(session.user.id)
+        ]);
+
+        if (cloudSessions.length > 0) setSessions(cloudSessions);
+        if (cloudSettings) setSettings(cloudSettings);
+        setIsLoading(false);
+      } else {
+        setSessions(storageService.getSessionsLocal());
+        const localSettings = storageService.getSettingsLocal();
+        if (localSettings) setSettings(localSettings);
+      }
+    };
+
+    fetchData();
+  }, [session]);
+
+  // Sync Settings to Cloud (Debounced)
+  useEffect(() => {
+    if (!session?.user) {
+      storageService.saveSettingsLocal(settings);
+      return;
+    }
+
+    if (settingsDebounceRef.current) clearTimeout(settingsDebounceRef.current);
+    settingsDebounceRef.current = setTimeout(() => {
+      storageService.syncSettings(settings, session.user.id);
+    }, 1000);
+
+    return () => { if (settingsDebounceRef.current) clearTimeout(settingsDebounceRef.current); };
+  }, [settings, session]);
+
   useEffect(() => {
     if (window.location.pathname === '/ads.txt') {
       setIsAdsTxt(true);
     }
-    setSessions(storageService.getSessions());
   }, []);
 
   useEffect(() => {
@@ -49,12 +106,17 @@ const App: React.FC = () => {
     }
   }, [activeTab, isRecording]);
 
-  const handleSessionComplete = (newSession: StudySession) => {
-    setSessions(prev => {
-      const updated = [...prev, newSession];
-      storageService.saveSession(newSession);
-      return updated;
-    });
+  const handleSessionComplete = async (newSession: StudySession) => {
+    if (session?.user) {
+      await storageService.syncSession(newSession, session.user.id);
+    } else {
+      storageService.saveSessionLocal(newSession);
+    }
+    setSessions(prev => [...prev, newSession]);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
 
   if (isAdsTxt) {
@@ -63,6 +125,18 @@ const App: React.FC = () => {
         google.com, pub-8461022130456850, DIRECT, f08c47fec0942fa0
       </pre>
     );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-slate-950">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <Login />;
   }
 
   const isDark = settings.theme === 'dark';
@@ -103,11 +177,15 @@ const App: React.FC = () => {
           </nav>
 
           <div className="flex items-center gap-2">
+             <div className="hidden md:flex items-center gap-3 mr-4">
+                <img src={session.user.user_metadata.avatar_url} className="w-8 h-8 rounded-full border border-slate-700" alt="Avatar" />
+                <button onClick={handleLogout} className="text-xs font-bold text-slate-500 hover:text-red-500 transition-colors">LOGOUT</button>
+             </div>
              <input 
                 type="text" 
                 value={settings.sessionLabel}
                 onChange={(e) => setSettings({...settings, sessionLabel: e.target.value})}
-                className={`border rounded-xl px-4 py-2 text-xs focus:outline-none w-48 hidden md:block transition-colors ${isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-slate-100 border-slate-200 text-slate-900'}`}
+                className={`border rounded-xl px-4 py-2 text-xs focus:outline-none w-32 hidden md:block transition-colors ${isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-slate-100 border-slate-200 text-slate-900'}`}
                 placeholder="Session Name"
              />
              <button className={`p-2.5 rounded-xl border transition-colors ${isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-700' : 'bg-white hover:bg-slate-50 border-slate-200'}`}>
@@ -152,9 +230,9 @@ const App: React.FC = () => {
       {!isRecording && (
         <footer className={`px-6 py-3 border-t text-[10px] flex justify-between items-center uppercase tracking-widest font-bold transition-colors ${isDark ? 'border-slate-800 bg-slate-900/30 text-slate-500' : 'border-slate-200 bg-white text-slate-400'}`}>
           <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 text-emerald-500">
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-              System Live
+              Cloud Sync Active
             </span>
             <button 
               onClick={() => setActiveTab(AppTab.PRIVACY)}
@@ -164,13 +242,7 @@ const App: React.FC = () => {
             </button>
           </div>
           <div className="flex items-center gap-4">
-            <span>{sessions.length} Recorded Sessions</span>
-            <button 
-              onClick={() => { if(confirm('Clear study history?')) { storageService.clearHistory(); setSessions([]); }}}
-              className="hover:text-red-500 transition-colors"
-            >
-              Reset History
-            </button>
+            <span>{sessions.length} Synced Sessions</span>
           </div>
         </footer>
       )}
