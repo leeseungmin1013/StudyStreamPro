@@ -15,6 +15,7 @@ const App: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [session, setSession] = useState<any>(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [isAdsTxt, setIsAdsTxt] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -41,19 +42,32 @@ const App: React.FC = () => {
 
   // Handle Auth State
   useEffect(() => {
+    // Check if user was previously a guest
+    const guestMode = localStorage.getItem('studystream_guest_mode') === 'true';
+    setIsGuest(guestMode);
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      // If we have a real session, we are definitely not just a guest
+      if (session) {
+        setIsGuest(false);
+        localStorage.setItem('studystream_guest_mode', 'false');
+      }
       setIsLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (session) {
+        setIsGuest(false);
+        localStorage.setItem('studystream_guest_mode', 'false');
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch Data on Login
+  // Fetch Data on Login or Guest Entry
   useEffect(() => {
     const fetchData = async () => {
       if (session?.user) {
@@ -66,7 +80,8 @@ const App: React.FC = () => {
         if (cloudSessions.length > 0) setSessions(cloudSessions);
         if (cloudSettings) setSettings(cloudSettings);
         setIsLoading(false);
-      } else {
+      } else if (isGuest) {
+        // Load Local Data
         setSessions(storageService.getSessionsLocal());
         const localSettings = storageService.getSettingsLocal();
         if (localSettings) setSettings(localSettings);
@@ -74,12 +89,14 @@ const App: React.FC = () => {
     };
 
     fetchData();
-  }, [session]);
+  }, [session, isGuest]);
 
-  // Sync Settings to Cloud (Debounced)
+  // Sync Settings to Cloud (Debounced) or Local
   useEffect(() => {
     if (!session?.user) {
-      storageService.saveSettingsLocal(settings);
+      if (isGuest) {
+        storageService.saveSettingsLocal(settings);
+      }
       return;
     }
 
@@ -89,7 +106,7 @@ const App: React.FC = () => {
     }, 1000);
 
     return () => { if (settingsDebounceRef.current) clearTimeout(settingsDebounceRef.current); };
-  }, [settings, session]);
+  }, [settings, session, isGuest]);
 
   useEffect(() => {
     if (window.location.pathname === '/ads.txt') {
@@ -116,7 +133,17 @@ const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    if (isGuest) {
+      setIsGuest(false);
+      localStorage.setItem('studystream_guest_mode', 'false');
+    } else {
+      await supabase.auth.signOut();
+    }
+  };
+
+  const handleGuestEntry = () => {
+    setIsGuest(true);
+    localStorage.setItem('studystream_guest_mode', 'true');
   };
 
   if (isAdsTxt) {
@@ -135,8 +162,8 @@ const App: React.FC = () => {
     );
   }
 
-  if (!session) {
-    return <Login />;
+  if (!session && !isGuest) {
+    return <Login onGuestEntry={handleGuestEntry} />;
   }
 
   const isDark = settings.theme === 'dark';
@@ -178,8 +205,14 @@ const App: React.FC = () => {
 
           <div className="flex items-center gap-2">
              <div className="hidden md:flex items-center gap-3 mr-4">
-                <img src={session.user.user_metadata.avatar_url} className="w-8 h-8 rounded-full border border-slate-700" alt="Avatar" />
-                <button onClick={handleLogout} className="text-xs font-bold text-slate-500 hover:text-red-500 transition-colors">LOGOUT</button>
+                {session?.user ? (
+                  <img src={session.user.user_metadata.avatar_url} className="w-8 h-8 rounded-full border border-slate-700" alt="Avatar" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[8px] font-bold text-slate-500">GUEST</div>
+                )}
+                <button onClick={handleLogout} className={`text-xs font-bold transition-colors ${isGuest ? 'text-blue-500 hover:text-blue-400' : 'text-slate-500 hover:text-red-500'}`}>
+                  {isGuest ? 'LOG IN' : 'LOGOUT'}
+                </button>
              </div>
              <input 
                 type="text" 
@@ -230,9 +263,9 @@ const App: React.FC = () => {
       {!isRecording && (
         <footer className={`px-6 py-3 border-t text-[10px] flex justify-between items-center uppercase tracking-widest font-bold transition-colors ${isDark ? 'border-slate-800 bg-slate-900/30 text-slate-500' : 'border-slate-200 bg-white text-slate-400'}`}>
           <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1 text-emerald-500">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-              Cloud Sync Active
+            <span className={`flex items-center gap-1 ${isGuest ? 'text-blue-500' : 'text-emerald-500'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${isGuest ? 'bg-blue-500' : 'bg-emerald-500'}`}></span>
+              {isGuest ? 'Local-Only Mode' : 'Cloud Sync Active'}
             </span>
             <button 
               onClick={() => setActiveTab(AppTab.PRIVACY)}
@@ -242,7 +275,7 @@ const App: React.FC = () => {
             </button>
           </div>
           <div className="flex items-center gap-4">
-            <span>{sessions.length} Synced Sessions</span>
+            <span>{sessions.length} {isGuest ? 'Local' : 'Synced'} Sessions</span>
           </div>
         </footer>
       )}
